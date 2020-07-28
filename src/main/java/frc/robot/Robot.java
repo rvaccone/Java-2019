@@ -7,13 +7,21 @@
 
 package frc.robot;
 
+import edu.wpi.cscore.UsbCamera;
+import edu.wpi.first.cameraserver.CameraServer;
 import edu.wpi.first.wpilibj.TimedRobot;
 import edu.wpi.first.wpilibj.command.Command;
 import edu.wpi.first.wpilibj.command.Scheduler;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-import frc.robot.commands.ExampleCommand;
-import frc.robot.subsystems.ExampleSubsystem;
+import frc.robot.commands.AutoTest;
+import frc.robot.subsystems.ArmSubsystem;
+import frc.robot.subsystems.ChassisSubsystem;
+import frc.robot.subsystems.CompressorSubsystem;
+import frc.robot.subsystems.GrabSubsystem;
+import edu.wpi.first.vision.VisionThread;
+import edu.wpi.first.vision.VisionRunner;
+//import org.usfirst.frc.team486.grip.MyVisionPipeline;
 
 /**
  * The VM is configured to automatically run this class, and to call the
@@ -22,23 +30,59 @@ import frc.robot.subsystems.ExampleSubsystem;
  * creating this project, you must also update the build.gradle file in the
  * project.
  */
+
+
 public class Robot extends TimedRobot {
-  public static ExampleSubsystem m_subsystem = new ExampleSubsystem();
+  //Initializing the subsystems
+  public static ChassisSubsystem drive = new ChassisSubsystem();
+  public static ArmSubsystem arm = new ArmSubsystem();
+  public static CompressorSubsystem compressor = new CompressorSubsystem();
+  public static GrabSubsystem grab = new GrabSubsystem();
   public static OI m_oi;
 
   Command m_autonomousCommand;
   SendableChooser<Command> m_chooser = new SendableChooser<>();
 
+  public static final int image_width = 240;
+  public static final int image_height = 320;
+
+  /**
+  private VisionThread vision_thread;
+  private double centerX = 0.0;
+  private final Object image_lock = new Object();
+  */
+
   /**
    * This function is run when the robot is first started up and should be
    * used for any initialization code.
-   */
+   */ 
   @Override
   public void robotInit() {
     m_oi = new OI();
-    m_chooser.setDefaultOption("Default Auto", new ExampleCommand());
-    // chooser.addOption("My Auto", new MyAutoCommand());
-    SmartDashboard.putData("Auto mode", m_chooser);
+    //Autonomous chooser
+    m_chooser.addOption("AutoTest", new AutoTest());
+    //Initializing the camera stream
+    UsbCamera server = CameraServer.getInstance().startAutomaticCapture();
+    server.setResolution(image_width, image_height);
+
+    /** AUTONOMOUS VISION PROCESSING
+    vision_thread = new VisionThread(server, new MyVisionPipe, pipeline -> {
+      if (!pipeline.filterContoursOutput().isEmpty()) {
+          Rect r = Imgproc.boundingRect(pipeline.filterContoursOutput().get(0));
+          synchronized (imgLock) {
+              centerX = r.x + (r.width / 2);
+          }
+      }
+    });
+    vision_thread.start();
+    */
+
+    //Starting the compressor
+    Robot.compressor.compressor_start();
+    //Calibration of the gyro
+    Robot.drive.gyro_calibrate();
+    //Reseting the arm encoder
+    Robot.arm.arm_encoder_reset();
   }
 
   /**
@@ -51,6 +95,30 @@ public class Robot extends TimedRobot {
    */
   @Override
   public void robotPeriodic() {
+    if(Robot.arm.arm_encoder_distance()>150 && Robot.arm.arm_encoder_distance()<450){
+      Robot.compressor.arm_retract();
+    }
+    else if (Robot.arm.arm_encoder_distance()>450 && !Robot.m_oi.opstick_arm_retract.get()){
+      Robot.compressor.arm_extend();
+    }
+    else if(Robot.arm.arm_encoder_distance()>3 && Robot.arm.arm_encoder_distance()<150 && !Robot.m_oi.opstick_arm_retract.get()){
+      Robot.compressor.arm_extend();
+    }
+    SmartDashboard.putBoolean("Arm Extention", Robot.compressor.arm_extend_get());
+    SmartDashboard.putBoolean("Middle Rocket Button", Robot.m_oi.station_rocket_middle.get());
+    SmartDashboard.putNumber("Arm Encoder", Robot.arm.arm_encoder_distance());
+
+    /** AUTONOMOUS VISION PROCESSING
+    double centerX;
+    synchronized(image_lock){
+      centerX = this.centerX;
+    }
+    double offset = centerX - (image_width/2);
+
+    if(Robot.m_oi.left_vision_drive_button.get() || Robot.m_oi.right_vision_drive_button.get()){
+      Robot.drive.arcade_drive(0.5, offset * 0.005);
+    }
+    */
   }
 
   /**
@@ -128,4 +196,4 @@ public class Robot extends TimedRobot {
   @Override
   public void testPeriodic() {
   }
-}
+} 
